@@ -49,6 +49,12 @@ workflow still validates that the tag equals the crate version, that
 `THIRD_PARTY_NOTICES.txt` matches the dependency graph, and it never
 overwrites an existing release.
 
+If a tag push does not start a run (it happened for the fork's first release,
+`libsignal_frb-7.0.0`: the tag was pushed moments after the fork's workflows
+were first registered), dispatch the build ON THE TAG:
+`gh workflow run build-libsignal.yml -R waggr-gb/libsignal_dart --ref libsignal_frb-X.Y.Z`.
+`github.ref_type` is then `tag`, so the tag/crate-version check still runs.
+
 ### Workflows
 
 | Workflow | State | Why |
