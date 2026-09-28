@@ -1,10 +1,10 @@
 [package]
 name = "libsignal_frb"
-version = "6.3.1"
+version = "7.0.0"
 edition = "2024"
 rust-version = "1.93.1"
 description = "Flutter Rust Bridge bindings for libsignal"
-repository = "https://github.com/djx-y-z/libsignal_dart"
+repository = "https://github.com/waggr-gb/libsignal_dart"
 license = "AGPL-3.0"
 publish = false  # Internal crate, not published to crates.io
 

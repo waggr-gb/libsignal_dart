@@ -50,7 +50,7 @@ const _packageName = 'libsignal';
 const _assetId = 'libsignal';
 
 /// GitHub repository for downloading releases.
-const _githubRepo = 'djx-y-z/libsignal_dart';
+const _githubRepo = 'waggr-gb/libsignal_dart';
 
 /// Rust crate name (used for library filenames and release tags).
 const _crateName = 'libsignal_frb';

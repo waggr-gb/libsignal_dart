@@ -1,5 +1,20 @@
 ## [Unreleased]
 
+## [8.0.0] - 2026-09-28 (waggr-gb fork; native crate libsignal_frb 7.0.0)
+
+### Fork
+
+- **This is the waggr-gb fork of `djx-y-z/libsignal_dart`** — see `FORK.md`.
+  `hook/build.dart` downloads native binaries from
+  `waggr-gb/libsignal_dart` releases, and the package is never published to
+  pub.dev (`publish_to: none`).
+- **Breaking: every Rust API error is a `LibSignalException { code, message }`**
+  instead of a bare `String`, so callers branch on a stable `code` rather than
+  matching message text (upstream issue
+  [djx-y-z/libsignal_dart#106](https://github.com/djx-y-z/libsignal_dart/issues/106)).
+  The crate API changed, so the native crate moves to 7.0.0.
+
+
 ### For Users
 
 #### Added

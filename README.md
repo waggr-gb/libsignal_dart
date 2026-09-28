@@ -1,5 +1,17 @@
 # libsignal - Signal Protocol for Dart
 
+> **waggr-gb fork.** This is Waggr's fork of
+> [djx-y-z/libsignal_dart](https://github.com/djx-y-z/libsignal_dart). It is not
+> on pub.dev — depend on it by git tag, and read [FORK.md](FORK.md) for what
+> differs and how releases are cut:
+>
+> ```yaml
+> libsignal:
+>   git:
+>     url: https://github.com/waggr-gb/libsignal_dart.git
+>     ref: v8.0.0
+> ```
+
 [![pub package](https://img.shields.io/pub/v/libsignal.svg)](https://pub.dev/packages/libsignal)
 [![CI](https://github.com/djx-y-z/libsignal_dart/actions/workflows/test.yml/badge.svg)](https://github.com/djx-y-z/libsignal_dart/actions/workflows/test.yml)
 [![Coverage](https://img.shields.io/endpoint?url=https://gist.githubusercontent.com/djx-y-z/246880c242ae85c452f4de0e6e91838c/raw/coverage.json)](https://gist.github.com/djx-y-z/246880c242ae85c452f4de0e6e91838c)

@@ -1,11 +1,12 @@
 name: libsignal
 description: "Dart wrapper for libsignal. Signal Protocol implementation for end-to-end encryption, sealed sender, group messaging, and secure cryptographic operations."
 
-version: 7.3.1
+version: 8.0.0
+publish_to: none  # waggr-gb fork: never published to pub.dev (see FORK.md)
 license: AGPL-3.0
-repository: https://github.com/djx-y-z/libsignal_dart
-homepage: https://github.com/djx-y-z/libsignal_dart
-issue_tracker: https://github.com/djx-y-z/libsignal_dart/issues
+repository: https://github.com/waggr-gb/libsignal_dart
+homepage: https://github.com/waggr-gb/libsignal_dart
+issue_tracker: https://github.com/waggr-gb/libsignal_dart/issues
 
 environment:
   sdk: ^3.10.0
