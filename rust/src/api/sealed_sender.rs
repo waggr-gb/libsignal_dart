@@ -8,6 +8,7 @@
 //!
 //! All sensitive cryptographic data is explicitly zeroed after use via the `zeroize` crate.
 
+use crate::api::error::{LibSignalErrorCode, LibSignalException};
 use crate::recording_stores::{KyberPreKeyUsed, RecordingKyberPreKeyStore, RecordingPreKeyStore};
 use flutter_rust_bridge::DartFnFuture;
 use futures::executor::block_on;
@@ -36,44 +37,44 @@ pub fn validate_sender_certificate(
     certificate: Vec<u8>,
     trust_root: Vec<u8>,
     timestamp: u64,
-) -> Result<bool, String> {
-    let cert = SenderCertificate::deserialize(&certificate).map_err(|e| e.to_string())?;
-    let root = PublicKey::deserialize(&trust_root).map_err(|e| e.to_string())?;
+) -> Result<bool, LibSignalException> {
+    let cert = SenderCertificate::deserialize(&certificate).map_err(LibSignalException::from)?;
+    let root = PublicKey::deserialize(&trust_root).map_err(LibSignalException::from)?;
     let ts = libsignal_protocol::Timestamp::from_epoch_millis(timestamp);
 
-    let is_valid = cert.validate(&root, ts).map_err(|e| e.to_string())?;
+    let is_valid = cert.validate(&root, ts).map_err(LibSignalException::from)?;
     if !is_valid {
-        return Err("Sender certificate validation failed".to_string());
+        return Err("Sender certificate validation failed".into());
     }
     Ok(true)
 }
 
 /// Get the sender name from a sender certificate.
 #[flutter_rust_bridge::frb(sync)]
-pub fn sender_certificate_get_sender_name(certificate: Vec<u8>) -> Result<String, String> {
-    let cert = SenderCertificate::deserialize(&certificate).map_err(|e| e.to_string())?;
-    Ok(cert.sender_uuid().map_err(|e| e.to_string())?.to_string())
+pub fn sender_certificate_get_sender_name(certificate: Vec<u8>) -> Result<String, LibSignalException> {
+    let cert = SenderCertificate::deserialize(&certificate).map_err(LibSignalException::from)?;
+    Ok(cert.sender_uuid().map_err(LibSignalException::from)?.to_string())
 }
 
 /// Get the sender device ID from a sender certificate.
 #[flutter_rust_bridge::frb(sync)]
-pub fn sender_certificate_get_sender_device_id(certificate: Vec<u8>) -> Result<u32, String> {
-    let cert = SenderCertificate::deserialize(&certificate).map_err(|e| e.to_string())?;
-    Ok(cert.sender_device_id().map_err(|e| e.to_string())?.into())
+pub fn sender_certificate_get_sender_device_id(certificate: Vec<u8>) -> Result<u32, LibSignalException> {
+    let cert = SenderCertificate::deserialize(&certificate).map_err(LibSignalException::from)?;
+    Ok(cert.sender_device_id().map_err(LibSignalException::from)?.into())
 }
 
 /// Get the sender public key from a sender certificate.
 #[flutter_rust_bridge::frb(sync)]
-pub fn sender_certificate_get_key(certificate: Vec<u8>) -> Result<Vec<u8>, String> {
-    let cert = SenderCertificate::deserialize(&certificate).map_err(|e| e.to_string())?;
-    Ok(cert.key().map_err(|e| e.to_string())?.serialize().into_vec())
+pub fn sender_certificate_get_key(certificate: Vec<u8>) -> Result<Vec<u8>, LibSignalException> {
+    let cert = SenderCertificate::deserialize(&certificate).map_err(LibSignalException::from)?;
+    Ok(cert.key().map_err(LibSignalException::from)?.serialize().into_vec())
 }
 
 /// Get the expiration timestamp from a sender certificate.
 #[flutter_rust_bridge::frb(sync)]
-pub fn sender_certificate_get_expiration(certificate: Vec<u8>) -> Result<u64, String> {
-    let cert = SenderCertificate::deserialize(&certificate).map_err(|e| e.to_string())?;
-    Ok(cert.expiration().map_err(|e| e.to_string())?.epoch_millis())
+pub fn sender_certificate_get_expiration(certificate: Vec<u8>) -> Result<u64, LibSignalException> {
+    let cert = SenderCertificate::deserialize(&certificate).map_err(LibSignalException::from)?;
+    Ok(cert.expiration().map_err(LibSignalException::from)?.epoch_millis())
 }
 
 // ============================================================================
@@ -94,19 +95,19 @@ pub fn create_server_certificate(
     key_id: u32,
     server_public_key: Vec<u8>,
     trust_root_private_key: Vec<u8>,
-) -> Result<Vec<u8>, String> {
-    let server_key = PublicKey::deserialize(&server_public_key).map_err(|e| e.to_string())?;
+) -> Result<Vec<u8>, LibSignalException> {
+    let server_key = PublicKey::deserialize(&server_public_key).map_err(LibSignalException::from)?;
     let trust_root = libsignal_protocol::PrivateKey::deserialize(&trust_root_private_key)
-        .map_err(|e| e.to_string())?;
+        .map_err(LibSignalException::from)?;
 
     let cert = libsignal_protocol::ServerCertificate::new(
         key_id,
         server_key,
         &trust_root,
         &mut OsRng.unwrap_err(),
-    ).map_err(|e| e.to_string())?;
+    ).map_err(LibSignalException::from)?;
 
-    cert.serialized().map_err(|e| e.to_string()).map(|b| b.to_vec())
+    cert.serialized().map_err(LibSignalException::from).map(|b| b.to_vec())
 }
 
 /// Create a sender certificate for testing.
@@ -129,12 +130,12 @@ pub fn create_sender_certificate(
     expiration: u64,
     server_certificate: Vec<u8>,
     server_private_key: Vec<u8>,
-) -> Result<Vec<u8>, String> {
-    let identity_key = PublicKey::deserialize(&sender_identity_key).map_err(|e| e.to_string())?;
+) -> Result<Vec<u8>, LibSignalException> {
+    let identity_key = PublicKey::deserialize(&sender_identity_key).map_err(LibSignalException::from)?;
     let server_cert = libsignal_protocol::ServerCertificate::deserialize(&server_certificate)
-        .map_err(|e| e.to_string())?;
+        .map_err(LibSignalException::from)?;
     let server_key = libsignal_protocol::PrivateKey::deserialize(&server_private_key)
-        .map_err(|e| e.to_string())?;
+        .map_err(LibSignalException::from)?;
 
     let device_id = libsignal_protocol::DeviceId::try_from(sender_device_id)
         .map_err(|_| "Invalid device ID")?;
@@ -149,9 +150,9 @@ pub fn create_sender_certificate(
         server_cert,
         &server_key,
         &mut OsRng.unwrap_err(),
-    ).map_err(|e| e.to_string())?;
+    ).map_err(LibSignalException::from)?;
 
-    cert.serialized().map_err(|e| e.to_string()).map(|b| b.to_vec())
+    cert.serialized().map_err(LibSignalException::from).map(|b| b.to_vec())
 }
 
 // ============================================================================
@@ -194,7 +195,7 @@ pub async fn sealed_sender_encrypt_with_callbacks(
     get_identity_key_pair: impl Fn() -> DartFnFuture<Vec<u8>> + Send + Sync + 'static,
     get_local_registration_id: impl Fn() -> DartFnFuture<u32> + Send + Sync + 'static,
     get_identity: impl Fn(String, u32) -> DartFnFuture<Option<Vec<u8>>> + Send + Sync + 'static,
-) -> Result<SealedSenderEncryptResult, String> {
+) -> Result<SealedSenderEncryptResult, LibSignalException> {
     // Step 1: Load data via callbacks
     // SECURITY: `Zeroizing` rather than a manual `zeroize()` after the call.
     // A Dart store callback that throws panics the worker thread (FRB declares
@@ -203,7 +204,12 @@ pub async fn sealed_sender_encrypt_with_callbacks(
     let session_bytes = Zeroizing::new(
         load_session(recipient_name.clone(), recipient_device_id)
             .await
-            .ok_or("No session found - cannot encrypt without established session")?,
+            .ok_or_else(|| {
+                LibSignalException::new(
+                    LibSignalErrorCode::SessionNotFound,
+                    "No session found - cannot encrypt without established session",
+                )
+            })?,
     );
     let identity_key_pair_bytes = Zeroizing::new(get_identity_key_pair().await);
     let local_registration_id = get_local_registration_id().await;
@@ -243,18 +249,18 @@ fn sealed_sender_encrypt_inner(
     identity_key_pair_bytes: &[u8],
     local_registration_id: u32,
     known_recipient_identity: &Option<Vec<u8>>,
-) -> Result<(Vec<u8>, Vec<u8>), String> {
+) -> Result<(Vec<u8>, Vec<u8>), LibSignalException> {
     // Parse sender certificate
     let cert = SenderCertificate::deserialize(sender_certificate)
-        .map_err(|e| e.to_string())?;
+        .map_err(LibSignalException::from)?;
 
     // Parse identity
     let our_identity = IdentityKeyPair::try_from(identity_key_pair_bytes)
-        .map_err(|e| e.to_string())?;
+        .map_err(LibSignalException::from)?;
 
     // Parse session
     let session = libsignal_protocol::SessionRecord::deserialize(session_bytes)
-        .map_err(|e| e.to_string())?;
+        .map_err(LibSignalException::from)?;
 
     let recipient_address = ProtocolAddress::new(
         recipient_name.to_string(),
@@ -274,7 +280,7 @@ fn sealed_sender_encrypt_inner(
     // Populate session store
     block_on(async {
         session_store.store_session(&recipient_address, &session).await
-    }).map_err(|e| e.to_string())?;
+    }).map_err(LibSignalException::from)?;
 
     // Perform sealed sender encryption
     let ciphertext = block_on(async {
@@ -287,15 +293,15 @@ fn sealed_sender_encrypt_inner(
             crate::current_time(),
             &mut OsRng.unwrap_err(),
         ).await
-    }).map_err(|e| e.to_string())?;
+    }).map_err(LibSignalException::from)?;
 
     // Get updated session
     let updated_session = block_on(async {
         SessionStoreTrait::load_session(&session_store, &recipient_address).await
-    }).map_err(|e| e.to_string())?
+    }).map_err(LibSignalException::from)?
         .ok_or("Session not found after encryption")?;
 
-    let session_bytes = updated_session.serialize().map_err(|e| e.to_string())?;
+    let session_bytes = updated_session.serialize().map_err(LibSignalException::from)?;
 
     Ok((ciphertext, session_bytes))
 }
@@ -385,7 +391,7 @@ pub async fn sealed_sender_decrypt_with_callbacks(
     load_kyber_pre_key: impl Fn(u32) -> DartFnFuture<Option<Vec<u8>>> + Send + Sync + 'static,
     mark_kyber_pre_key_used: impl Fn(u32, u32, Vec<u8>) -> DartFnFuture<()> + Send + Sync + 'static,
     get_identity: impl Fn(String, u32) -> DartFnFuture<Option<Vec<u8>>> + Send + Sync + 'static,
-) -> Result<SealedSenderDecryptResult, String> {
+) -> Result<SealedSenderDecryptResult, LibSignalException> {
     // Step 1: Load identity data. `Zeroizing` so an unwind out of a throwing
     // store callback cannot leave the private identity key in freed memory.
     let identity_key_pair_bytes = Zeroizing::new(get_identity_key_pair().await);
@@ -467,7 +473,7 @@ async fn sealed_sender_decrypt_inner<
     load_pre_key: &LoadPreKeyFn,
     load_kyber_pre_key: &LoadKyberPreKeyFn,
     get_identity: &GetIdentityFn,
-) -> Result<SealedSenderDecryptOutcome, String>
+) -> Result<SealedSenderDecryptOutcome, LibSignalException>
 where
     LoadSessionFn: Fn(String, u32) -> DartFnFuture<Option<Vec<u8>>> + Send + Sync,
     LoadSignedPreKeyFn: Fn(u32) -> DartFnFuture<Option<Vec<u8>>> + Send + Sync,
@@ -476,12 +482,12 @@ where
     GetIdentityFn: Fn(String, u32) -> DartFnFuture<Option<Vec<u8>>> + Send + Sync,
 {
     // Parse trust root
-    let root = PublicKey::deserialize(trust_root).map_err(|e| e.to_string())?;
+    let root = PublicKey::deserialize(trust_root).map_err(LibSignalException::from)?;
     let ts = libsignal_protocol::Timestamp::from_epoch_millis(timestamp);
 
     // Parse our identity
     let our_identity = IdentityKeyPair::try_from(identity_key_pair_bytes)
-        .map_err(|e| e.to_string())?;
+        .map_err(LibSignalException::from)?;
 
     // Create in-memory stores
     let mut session_store = InMemSessionStore::new();
@@ -498,19 +504,19 @@ where
             ciphertext,
             &identity_store,
         ).await
-    }).map_err(|e| e.to_string())?;
+    }).map_err(LibSignalException::from)?;
 
     // Get sender info from the USMC
-    let sender_cert = usmc.sender().map_err(|e| e.to_string())?;
+    let sender_cert = usmc.sender().map_err(LibSignalException::from)?;
 
     // Validate sender certificate against trust root
-    if !sender_cert.validate(&root, ts).map_err(|e| e.to_string())? {
-        return Err("Sender certificate validation failed".to_string());
+    if !sender_cert.validate(&root, ts).map_err(LibSignalException::from)? {
+        return Err("Sender certificate validation failed".into());
     }
 
-    let sender_name = sender_cert.sender_uuid().map_err(|e| e.to_string())?.to_string();
-    let sender_device_id: u32 = sender_cert.sender_device_id().map_err(|e| e.to_string())?.into();
-    let sender_identity_key = sender_cert.key().map_err(|e| e.to_string())?.serialize().to_vec();
+    let sender_name = sender_cert.sender_uuid().map_err(LibSignalException::from)?.to_string();
+    let sender_device_id: u32 = sender_cert.sender_device_id().map_err(LibSignalException::from)?.into();
+    let sender_identity_key = sender_cert.key().map_err(LibSignalException::from)?.serialize().to_vec();
 
     // SECURITY: upstream's `sealed_sender_decrypt` refuses a message whose
     // certificate names this very device, before it touches any store. This
@@ -519,7 +525,7 @@ where
     // on the sender's E.164; this binding has no local E.164 to compare, so the
     // service id is the whole test.
     if sender_name == local_name && sender_device_id == local_device_id {
-        return Err(SignalProtocolError::SealedSenderSelfSend.to_string());
+        return Err(SignalProtocolError::SealedSenderSelfSend.into());
     }
 
     let sender_address = ProtocolAddress::new(
@@ -541,17 +547,17 @@ where
     if let Some(session_bytes) = load_session(sender_name.clone(), sender_device_id).await {
         let session_bytes = Zeroizing::new(session_bytes);
         let existing = libsignal_protocol::SessionRecord::deserialize(&session_bytes)
-            .map_err(|e| format!("Failed to deserialize existing session: {}", e))?;
+            .map_err(|e| LibSignalException::from(format!("Failed to deserialize existing session: {}", e)))?;
         block_on(async {
             session_store.store_session(&sender_address, &existing).await
-        }).map_err(|e| format!("Failed to store existing session: {}", e))?;
+        }).map_err(|e| LibSignalException::from(format!("Failed to store existing session: {}", e)))?;
     }
 
     // Get message type and content from USMC
     let msg_type = usmc.msg_type()
-        .map_err(|e| format!("Failed to get message type from USMC: {}", e))?;
+        .map_err(|e| LibSignalException::from(format!("Failed to get message type from USMC: {}", e)))?;
     let message_bytes = usmc.contents()
-        .map_err(|e| format!("Failed to get contents from USMC: {}", e))?;
+        .map_err(|e| LibSignalException::from(format!("Failed to get contents from USMC: {}", e)))?;
 
     let local_address = ProtocolAddress::new(
         local_name.to_string(),
@@ -561,7 +567,7 @@ where
     let plaintext = if msg_type == CiphertextMessageType::PreKey {
         // Parse as pre-key message to get key IDs
         let prekey_message = libsignal_protocol::PreKeySignalMessage::try_from(message_bytes)
-            .map_err(|e| e.to_string())?;
+            .map_err(LibSignalException::from)?;
 
         let signed_pre_key_id: u32 = prekey_message.signed_pre_key_id().into();
         let pre_key_id: Option<u32> = prekey_message.pre_key_id().map(|id| id.into());
@@ -570,22 +576,27 @@ where
         // Load pre-keys
         let mut signed_pre_key_bytes = load_signed_pre_key(signed_pre_key_id)
             .await
-            .ok_or_else(|| format!("Signed pre-key {} not found", signed_pre_key_id))?;
+            .ok_or_else(|| {
+                LibSignalException::new(
+                    LibSignalErrorCode::InvalidSignedPreKeyId,
+                    format!("Signed pre-key {} not found", signed_pre_key_id),
+                )
+            })?;
         let signed_prekey_record = SignedPreKeyRecord::deserialize(&signed_pre_key_bytes)
-            .map_err(|e: SignalProtocolError| e.to_string())?;
+            .map_err(LibSignalException::from)?;
         block_on(async {
             signed_prekey_store.save_signed_pre_key(SignedPreKeyId::from(signed_pre_key_id), &signed_prekey_record).await
-        }).map_err(|e| e.to_string())?;
+        }).map_err(LibSignalException::from)?;
         signed_pre_key_bytes.zeroize();
 
         if let Some(id) = pre_key_id
             && let Some(mut bytes) = load_pre_key(id).await
         {
             let prekey_record = PreKeyRecord::deserialize(&bytes)
-                .map_err(|e| e.to_string())?;
+                .map_err(LibSignalException::from)?;
             block_on(async {
                 prekey_store.save_pre_key(PreKeyId::from(id), &prekey_record).await
-            }).map_err(|e| e.to_string())?;
+            }).map_err(LibSignalException::from)?;
             bytes.zeroize();
         }
 
@@ -593,10 +604,10 @@ where
             && let Some(mut bytes) = load_kyber_pre_key(id).await
         {
             let kyber_prekey_record = KyberPreKeyRecord::deserialize(&bytes)
-                .map_err(|e: SignalProtocolError| e.to_string())?;
+                .map_err(LibSignalException::from)?;
             block_on(async {
                 kyber_prekey_store.save_kyber_pre_key(KyberPreKeyId::from(id), &kyber_prekey_record).await
-            }).map_err(|e| e.to_string())?;
+            }).map_err(LibSignalException::from)?;
             bytes.zeroize();
         }
 
@@ -613,11 +624,11 @@ where
                 &mut kyber_prekey_store,
                 &mut OsRng.unwrap_err(),
             ).await
-        }).map_err(|e| e.to_string())?
+        }).map_err(LibSignalException::from)?
     } else if msg_type == CiphertextMessageType::Whisper {
         // Regular signal message
         let signal_message = libsignal_protocol::SignalMessage::try_from(message_bytes)
-            .map_err(|e| e.to_string())?;
+            .map_err(LibSignalException::from)?;
 
         block_on(async {
             libsignal_protocol::message_decrypt_signal(
@@ -628,18 +639,18 @@ where
                 &mut identity_store,
                 &mut OsRng.unwrap_err(),
             ).await
-        }).map_err(|e| e.to_string())?
+        }).map_err(LibSignalException::from)?
     } else {
-        return Err(format!("Unsupported message type: {:?}", msg_type));
+        return Err(format!("Unsupported message type: {:?}", msg_type).into());
     };
 
     // Get updated session
     let updated_session = block_on(async {
         SessionStoreTrait::load_session(&session_store, &sender_address).await
-    }).map_err(|e| e.to_string())?
+    }).map_err(LibSignalException::from)?
         .ok_or("Session not found after decryption")?;
 
-    let session_bytes = updated_session.serialize().map_err(|e| e.to_string())?;
+    let session_bytes = updated_session.serialize().map_err(LibSignalException::from)?;
 
     Ok(SealedSenderDecryptOutcome {
         plaintext,
@@ -697,10 +708,10 @@ impl UnidentifiedSenderMessageContent {
         contents: Vec<u8>,
         content_hint: u32,
         group_id: Option<Vec<u8>>,
-    ) -> Result<UnidentifiedSenderMessageContent, String> {
+    ) -> Result<UnidentifiedSenderMessageContent, LibSignalException> {
         let msg_type = CiphertextMessageType::try_from(message_type)
-            .map_err(|_| format!("Invalid message type: {}", message_type))?;
-        let cert = SenderCertificate::deserialize(&sender_certificate).map_err(|e| e.to_string())?;
+            .map_err(|_| LibSignalException::from(format!("Invalid message type: {}", message_type)))?;
+        let cert = SenderCertificate::deserialize(&sender_certificate).map_err(LibSignalException::from)?;
         let native = NativeUnidentifiedSenderMessageContent::new(
             msg_type,
             cert,
@@ -708,73 +719,73 @@ impl UnidentifiedSenderMessageContent {
             libsignal_protocol::ContentHint::from(content_hint),
             group_id,
         )
-        .map_err(|e: SignalProtocolError| e.to_string())?;
+        .map_err(LibSignalException::from)?;
         Ok(UnidentifiedSenderMessageContent { inner: native })
     }
 
     /// Deserialize a USMC from its serialized form.
     #[flutter_rust_bridge::frb(sync)]
-    pub fn deserialize(data: Vec<u8>) -> Result<UnidentifiedSenderMessageContent, String> {
+    pub fn deserialize(data: Vec<u8>) -> Result<UnidentifiedSenderMessageContent, LibSignalException> {
         let native = NativeUnidentifiedSenderMessageContent::deserialize(&data)
-            .map_err(|e: SignalProtocolError| e.to_string())?;
+            .map_err(LibSignalException::from)?;
         Ok(UnidentifiedSenderMessageContent { inner: native })
     }
 
     /// Serialize the USMC.
     #[flutter_rust_bridge::frb(sync)]
-    pub fn serialize(&self) -> Result<Vec<u8>, String> {
+    pub fn serialize(&self) -> Result<Vec<u8>, LibSignalException> {
         self.inner
             .serialized()
             .map(<[u8]>::to_vec)
-            .map_err(|e: SignalProtocolError| e.to_string())
+            .map_err(LibSignalException::from)
     }
 
     /// Get the wrapped message's `CiphertextMessageType` value.
     #[flutter_rust_bridge::frb(sync)]
-    pub fn message_type(&self) -> Result<u8, String> {
+    pub fn message_type(&self) -> Result<u8, LibSignalException> {
         self.inner
             .msg_type()
             .map(|t| t as u8)
-            .map_err(|e: SignalProtocolError| e.to_string())
+            .map_err(LibSignalException::from)
     }
 
     /// Get the sender's certificate (serialized).
     #[flutter_rust_bridge::frb(sync)]
-    pub fn sender_certificate(&self) -> Result<Vec<u8>, String> {
+    pub fn sender_certificate(&self) -> Result<Vec<u8>, LibSignalException> {
         let cert = self
             .inner
             .sender()
-            .map_err(|e: SignalProtocolError| e.to_string())?;
+            .map_err(LibSignalException::from)?;
         cert.serialized()
             .map(<[u8]>::to_vec)
-            .map_err(|e: SignalProtocolError| e.to_string())
+            .map_err(LibSignalException::from)
     }
 
     /// Get the wrapped (still encrypted) message.
     #[flutter_rust_bridge::frb(sync)]
-    pub fn contents(&self) -> Result<Vec<u8>, String> {
+    pub fn contents(&self) -> Result<Vec<u8>, LibSignalException> {
         self.inner
             .contents()
             .map(<[u8]>::to_vec)
-            .map_err(|e: SignalProtocolError| e.to_string())
+            .map_err(LibSignalException::from)
     }
 
     /// Get the content hint.
     #[flutter_rust_bridge::frb(sync)]
-    pub fn content_hint(&self) -> Result<u32, String> {
+    pub fn content_hint(&self) -> Result<u32, LibSignalException> {
         self.inner
             .content_hint()
             .map(libsignal_protocol::ContentHint::to_u32)
-            .map_err(|e: SignalProtocolError| e.to_string())
+            .map_err(LibSignalException::from)
     }
 
     /// Get the group id, if the sender set one.
     #[flutter_rust_bridge::frb(sync)]
-    pub fn group_id(&self) -> Result<Option<Vec<u8>>, String> {
+    pub fn group_id(&self) -> Result<Option<Vec<u8>>, LibSignalException> {
         self.inner
             .group_id()
             .map(|g| g.map(<[u8]>::to_vec))
-            .map_err(|e: SignalProtocolError| e.to_string())
+            .map_err(LibSignalException::from)
     }
 }
 
@@ -790,7 +801,7 @@ pub async fn sealed_sender_encrypt_from_usmc_with_callbacks(
     get_identity_key_pair: impl Fn() -> DartFnFuture<Vec<u8>> + Send + Sync + 'static,
     get_local_registration_id: impl Fn() -> DartFnFuture<u32> + Send + Sync + 'static,
     get_identity: impl Fn(String, u32) -> DartFnFuture<Option<Vec<u8>>> + Send + Sync + 'static,
-) -> Result<Vec<u8>, String> {
+) -> Result<Vec<u8>, LibSignalException> {
     // `Zeroizing`: `get_identity` below is a store call that can throw, and a
     // throwing Dart callback unwinds the worker thread past any manual cleanup.
     let identity_key_pair_bytes = Zeroizing::new(get_identity_key_pair().await);
@@ -814,11 +825,11 @@ fn sealed_sender_encrypt_from_usmc_inner(
     identity_key_pair_bytes: &[u8],
     local_registration_id: u32,
     recipient_identity: &Option<Vec<u8>>,
-) -> Result<Vec<u8>, String> {
+) -> Result<Vec<u8>, LibSignalException> {
     let content = NativeUnidentifiedSenderMessageContent::deserialize(usmc)
-        .map_err(|e: SignalProtocolError| e.to_string())?;
+        .map_err(LibSignalException::from)?;
     let our_identity =
-        IdentityKeyPair::try_from(identity_key_pair_bytes).map_err(|e| e.to_string())?;
+        IdentityKeyPair::try_from(identity_key_pair_bytes).map_err(LibSignalException::from)?;
     let recipient_address = ProtocolAddress::new(
         recipient_name.to_string(),
         recipient_device_id
@@ -841,7 +852,7 @@ fn sealed_sender_encrypt_from_usmc_inner(
         )
         .await
     })
-    .map_err(|e| e.to_string())
+    .map_err(LibSignalException::from)
 }
 
 /// Unseal a sealed sender message down to its USMC without decrypting the
@@ -905,7 +916,7 @@ pub async fn sealed_sender_decrypt_to_usmc_with_callbacks(
     get_identity_key_pair: impl Fn() -> DartFnFuture<Vec<u8>> + Send + Sync + 'static,
     get_local_registration_id: impl Fn() -> DartFnFuture<u32> + Send + Sync + 'static,
     get_identity: impl Fn(String, u32) -> DartFnFuture<Option<Vec<u8>>> + Send + Sync + 'static,
-) -> Result<Vec<u8>, String> {
+) -> Result<Vec<u8>, LibSignalException> {
     // `Zeroizing`: `get_identity` inside is a store call that can throw, and a
     // throwing Dart callback unwinds the worker thread past any manual cleanup.
     let identity_key_pair_bytes = Zeroizing::new(get_identity_key_pair().await);
@@ -934,13 +945,13 @@ async fn sealed_sender_decrypt_to_usmc_inner<GetIdentityFn>(
     identity_key_pair_bytes: &[u8],
     local_registration_id: u32,
     get_identity: &GetIdentityFn,
-) -> Result<Vec<u8>, String>
+) -> Result<Vec<u8>, LibSignalException>
 where
     GetIdentityFn: Fn(String, u32) -> DartFnFuture<Option<Vec<u8>>> + Send + Sync,
 {
     let our_identity =
-        IdentityKeyPair::try_from(identity_key_pair_bytes).map_err(|e| e.to_string())?;
-    let root = PublicKey::deserialize(trust_root).map_err(|e| e.to_string())?;
+        IdentityKeyPair::try_from(identity_key_pair_bytes).map_err(LibSignalException::from)?;
+    let root = PublicKey::deserialize(trust_root).map_err(LibSignalException::from)?;
     let ts = libsignal_protocol::Timestamp::from_epoch_millis(timestamp);
     let identity_store = InMemIdentityKeyStore::new(our_identity, local_registration_id);
 
@@ -961,32 +972,32 @@ where
     let content = block_on(async {
         libsignal_protocol::sealed_sender_decrypt_to_usmc(ciphertext, &identity_store).await
     })
-    .map_err(|e| e.to_string())?;
+    .map_err(LibSignalException::from)?;
 
     // 2. Upstream's decrypt_to_usmc stops at "whoever sealed this holds the
     // certificate's key" — the server signature is only checked one level up,
     // in sealed_sender_decrypt. Do it here so the unchecked certificate never
     // reaches Dart.
-    let sender_cert = content.sender().map_err(|e: SignalProtocolError| e.to_string())?;
+    let sender_cert = content.sender().map_err(LibSignalException::from)?;
     if !sender_cert
         .validate(&root, ts)
-        .map_err(|e: SignalProtocolError| e.to_string())?
+        .map_err(LibSignalException::from)?
     {
-        return Err("Sender certificate validation failed".to_string());
+        return Err("Sender certificate validation failed".into());
     }
 
     // 3.
     let sender_name = sender_cert
         .sender_uuid()
-        .map_err(|e: SignalProtocolError| e.to_string())?
+        .map_err(LibSignalException::from)?
         .to_string();
     let sender_device_id = sender_cert
         .sender_device_id()
-        .map_err(|e: SignalProtocolError| e.to_string())?;
+        .map_err(LibSignalException::from)?;
     let cert_identity = IdentityKey::new(
         sender_cert
             .key()
-            .map_err(|e: SignalProtocolError| e.to_string())?,
+            .map_err(LibSignalException::from)?,
     );
 
     // 4. Upstream's `sealed_sender_decrypt` refuses a message whose certificate
@@ -996,7 +1007,7 @@ where
     // matches on the sender's E.164; this binding has no local E.164 to compare,
     // so the service id is the whole test — same as the decrypt path here.
     if sender_name == local_name && u32::from(sender_device_id) == local_device_id {
-        return Err(SignalProtocolError::SealedSenderSelfSend.to_string());
+        return Err(SignalProtocolError::SealedSenderSelfSend.into());
     }
 
     // 5.
@@ -1007,17 +1018,17 @@ where
     // here is an error — a malformed stored key must never degrade into a
     // skipped check.
     if let Some(bytes) = known_sender_identity {
-        let stored = IdentityKey::new(PublicKey::deserialize(&bytes).map_err(|e| e.to_string())?);
+        let stored = IdentityKey::new(PublicKey::deserialize(&bytes).map_err(LibSignalException::from)?);
         if stored != cert_identity {
             let address = ProtocolAddress::new(sender_name, sender_device_id);
-            return Err(SignalProtocolError::UntrustedIdentity(address).to_string());
+            return Err(SignalProtocolError::UntrustedIdentity(address).into());
         }
     }
 
     content
         .serialized()
         .map(<[u8]>::to_vec)
-        .map_err(|e: SignalProtocolError| e.to_string())
+        .map_err(LibSignalException::from)
 }
 
 // ============================================================================
@@ -1068,7 +1079,7 @@ pub async fn sealed_sender_multi_recipient_encrypt_with_callbacks(
     get_identity_key_pair: impl Fn() -> DartFnFuture<Vec<u8>> + Send + Sync + 'static,
     get_local_registration_id: impl Fn() -> DartFnFuture<u32> + Send + Sync + 'static,
     get_identity: impl Fn(String, u32) -> DartFnFuture<Option<Vec<u8>>> + Send + Sync + 'static,
-) -> Result<Vec<u8>, String> {
+) -> Result<Vec<u8>, LibSignalException> {
     // SECURITY: session records carry root, chain and message keys. They arrive
     // as plain `Vec<u8>` from Dart rather than through a store callback, so this
     // is the only place that can clear them — and the `get_identity` loop below
@@ -1125,15 +1136,15 @@ fn sealed_sender_multi_recipient_encrypt_inner(
     usmc: &[u8],
     identity_key_pair_bytes: &[u8],
     local_registration_id: u32,
-) -> Result<Vec<u8>, String> {
+) -> Result<Vec<u8>, LibSignalException> {
     if destinations.is_empty() {
-        return Err("At least one destination is required".to_string());
+        return Err("At least one destination is required".into());
     }
 
     let content = NativeUnidentifiedSenderMessageContent::deserialize(usmc)
-        .map_err(|e: SignalProtocolError| e.to_string())?;
+        .map_err(LibSignalException::from)?;
     let our_identity =
-        IdentityKeyPair::try_from(identity_key_pair_bytes).map_err(|e| e.to_string())?;
+        IdentityKeyPair::try_from(identity_key_pair_bytes).map_err(LibSignalException::from)?;
 
     let addresses = destinations
         .iter()
@@ -1142,24 +1153,24 @@ fn sealed_sender_multi_recipient_encrypt_inner(
                 d.name.clone(),
                 d.device_id
                     .try_into()
-                    .map_err(|_| format!("Invalid device ID for {}", d.name))?,
+                    .map_err(|_| LibSignalException::from(format!("Invalid device ID for {}", d.name)))?,
             ))
         })
-        .collect::<Result<Vec<_>, String>>()?;
+        .collect::<Result<Vec<_>, LibSignalException>>()?;
     let sessions = destinations
         .iter()
         .map(|d| {
             libsignal_protocol::SessionRecord::deserialize(&d.session_record)
-                .map_err(|e: SignalProtocolError| e.to_string())
+                .map_err(LibSignalException::from)
         })
-        .collect::<Result<Vec<_>, String>>()?;
+        .collect::<Result<Vec<_>, LibSignalException>>()?;
     let excluded = excluded_recipients
         .iter()
         .map(|s| {
             libsignal_protocol::ServiceId::parse_from_service_id_string(s)
-                .ok_or_else(|| format!("Invalid excluded recipient service id: {}", s))
+                .ok_or_else(|| LibSignalException::from(format!("Invalid excluded recipient service id: {}", s)))
         })
-        .collect::<Result<Vec<_>, String>>()?;
+        .collect::<Result<Vec<_>, LibSignalException>>()?;
 
     let address_refs: Vec<&ProtocolAddress> = addresses.iter().collect();
     let session_refs: Vec<&libsignal_protocol::SessionRecord> = sessions.iter().collect();
@@ -1180,7 +1191,7 @@ fn sealed_sender_multi_recipient_encrypt_inner(
         )
         .await
     })
-    .map_err(|e| e.to_string())
+    .map_err(LibSignalException::from)
 }
 
 /// One device of one recipient in a parsed multi-recipient message.
@@ -1258,18 +1269,18 @@ pub struct SealedSenderV2SentMessage {
 /// All offsets index into the `data` you pass here, so hold on to it.
 pub async fn sealed_sender_v2_parse_sent_message(
     data: Vec<u8>,
-) -> Result<SealedSenderV2SentMessage, String> {
+) -> Result<SealedSenderV2SentMessage, LibSignalException> {
     // The offsets below are u32 for the FFI boundary; refuse anything that
     // could not be addressed by one rather than silently truncating.
     if data.len() > u32::MAX as usize {
         return Err(format!(
             "Message too large to address with 32-bit offsets: {} bytes",
             data.len()
-        ));
+        ).into());
     }
 
     let parsed = libsignal_protocol::SealedSenderV2SentMessage::parse(&data)
-        .map_err(|e: SignalProtocolError| e.to_string())?;
+        .map_err(LibSignalException::from)?;
 
     // Read the ReceivedMessage version byte off libsignal instead of repeating
     // its constant, which is private. Any recipient that has a message carries

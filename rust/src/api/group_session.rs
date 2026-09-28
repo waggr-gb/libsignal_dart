@@ -10,12 +10,12 @@
 //!
 //! All sensitive cryptographic data is explicitly zeroed after use via the `zeroize` crate.
 
+use crate::api::error::{LibSignalErrorCode, LibSignalException};
 use flutter_rust_bridge::DartFnFuture;
 use futures::executor::block_on;
 use libsignal_protocol::{
     IdentityKeyPair, InMemSenderKeyStore, ProtocolAddress, SenderKeyDistributionMessage,
     SenderKeyRecord, SenderKeyStore,
-    SignalProtocolError,
 };
 use rand::{TryRngCore as _, rngs::OsRng};
 use uuid::Uuid;
@@ -52,7 +52,7 @@ pub async fn create_sender_key_distribution_message_with_callbacks(
     load_sender_key: impl Fn(String, u32, String) -> DartFnFuture<Option<Vec<u8>>> + Send + Sync + 'static,
     store_sender_key: impl Fn(String, u32, String, Vec<u8>) -> DartFnFuture<()> + Send + Sync + 'static,
     get_identity_key_pair: impl Fn() -> DartFnFuture<Vec<u8>> + Send + Sync + 'static,
-) -> Result<CreateSenderKeyDistributionResult, String> {
+) -> Result<CreateSenderKeyDistributionResult, LibSignalException> {
     // Step 1: Load data via callbacks
     let mut existing_key_bytes = load_sender_key(sender_name.clone(), sender_device_id, distribution_id.clone()).await;
     let mut identity_key_pair_bytes = get_identity_key_pair().await;
@@ -89,14 +89,14 @@ fn create_sender_key_distribution_inner(
     distribution_id: &str,
     existing_key_bytes: &Option<Vec<u8>>,
     identity_key_pair_bytes: &[u8],
-) -> Result<(Vec<u8>, Vec<u8>), String> {
+) -> Result<(Vec<u8>, Vec<u8>), LibSignalException> {
     // Parse identity (unused but validates the data)
     let _our_identity = IdentityKeyPair::try_from(identity_key_pair_bytes)
-        .map_err(|e| e.to_string())?;
+        .map_err(LibSignalException::from)?;
 
     // Parse distribution ID as UUID
     let dist_uuid = Uuid::parse_str(distribution_id)
-        .map_err(|e| format!("Invalid distribution ID: {}", e))?;
+        .map_err(|e| LibSignalException::from(format!("Invalid distribution ID: {}", e)))?;
 
     // Create protocol address
     let sender_address = ProtocolAddress::new(
@@ -110,10 +110,10 @@ fn create_sender_key_distribution_inner(
     // Load existing sender key if present
     if let Some(bytes) = existing_key_bytes {
         let record = SenderKeyRecord::deserialize(bytes)
-            .map_err(|e: SignalProtocolError| e.to_string())?;
+            .map_err(LibSignalException::from)?;
         block_on(async {
             sender_key_store.store_sender_key(&sender_address, dist_uuid, &record).await
-        }).map_err(|e| e.to_string())?;
+        }).map_err(LibSignalException::from)?;
     }
 
     // Create the distribution message
@@ -124,17 +124,17 @@ fn create_sender_key_distribution_inner(
             &mut sender_key_store,
             &mut OsRng.unwrap_err(),
         ).await
-    }).map_err(|e| e.to_string())?;
+    }).map_err(LibSignalException::from)?;
 
     // Get the updated sender key
     let updated_key = block_on(async {
         sender_key_store.load_sender_key(&sender_address, dist_uuid).await
-    }).map_err(|e: SignalProtocolError| e.to_string())?
+    }).map_err(LibSignalException::from)?
         .ok_or("Sender key not created")?;
 
     // Serialize results
     let distribution_bytes = distribution_message.serialized().to_vec();
-    let key_bytes = updated_key.serialize().map_err(|e| e.to_string())?;
+    let key_bytes = updated_key.serialize().map_err(LibSignalException::from)?;
 
     Ok((distribution_bytes, key_bytes))
 }
@@ -156,7 +156,7 @@ pub async fn process_sender_key_distribution_message_with_callbacks(
     distribution_message: Vec<u8>,
     load_sender_key: impl Fn(String, u32, String) -> DartFnFuture<Option<Vec<u8>>> + Send + Sync + 'static,
     store_sender_key: impl Fn(String, u32, String, Vec<u8>) -> DartFnFuture<()> + Send + Sync + 'static,
-) -> Result<Vec<u8>, String> {
+) -> Result<Vec<u8>, LibSignalException> {
     // Step 1: Load existing key if any
     let mut existing_key_bytes = load_sender_key(sender_name.clone(), sender_device_id, distribution_id.clone()).await;
 
@@ -188,10 +188,10 @@ fn process_sender_key_distribution_inner(
     distribution_id: &str,
     distribution_message: &[u8],
     existing_key_bytes: &Option<Vec<u8>>,
-) -> Result<Vec<u8>, String> {
+) -> Result<Vec<u8>, LibSignalException> {
     // Parse distribution ID as UUID
     let dist_uuid = Uuid::parse_str(distribution_id)
-        .map_err(|e| format!("Invalid distribution ID: {}", e))?;
+        .map_err(|e| LibSignalException::from(format!("Invalid distribution ID: {}", e)))?;
 
     // Create protocol address
     let sender_address = ProtocolAddress::new(
@@ -201,7 +201,7 @@ fn process_sender_key_distribution_inner(
 
     // Parse the distribution message
     let skdm = SenderKeyDistributionMessage::try_from(distribution_message)
-        .map_err(|e: SignalProtocolError| e.to_string())?;
+        .map_err(LibSignalException::from)?;
 
     // SECURITY: libsignal stores the new sender-key state under the id carried
     // *inside* the message, while this wrapper's store callbacks are keyed by
@@ -211,12 +211,12 @@ fn process_sender_key_distribution_inner(
     // distribution message is dropped without an error. Refuse instead.
     let msg_uuid = skdm
         .distribution_id()
-        .map_err(|e: SignalProtocolError| e.to_string())?;
+        .map_err(LibSignalException::from)?;
     if msg_uuid != dist_uuid {
         return Err(format!(
             "Distribution ID mismatch: message carries {}, caller passed {}",
             msg_uuid, dist_uuid
-        ));
+        ).into());
     }
 
     // Create in-memory store
@@ -225,10 +225,10 @@ fn process_sender_key_distribution_inner(
     // Load existing sender key if present
     if let Some(bytes) = existing_key_bytes {
         let record = SenderKeyRecord::deserialize(bytes)
-            .map_err(|e: SignalProtocolError| e.to_string())?;
+            .map_err(LibSignalException::from)?;
         block_on(async {
             sender_key_store.store_sender_key(&sender_address, dist_uuid, &record).await
-        }).map_err(|e| e.to_string())?;
+        }).map_err(LibSignalException::from)?;
     }
 
     // Process the distribution message
@@ -238,15 +238,15 @@ fn process_sender_key_distribution_inner(
             &skdm,
             &mut sender_key_store,
         ).await
-    }).map_err(|e| e.to_string())?;
+    }).map_err(LibSignalException::from)?;
 
     // Get the stored sender key
     let sender_key = block_on(async {
         sender_key_store.load_sender_key(&sender_address, dist_uuid).await
-    }).map_err(|e: SignalProtocolError| e.to_string())?
+    }).map_err(LibSignalException::from)?
         .ok_or("Sender key not stored after processing")?;
 
-    sender_key.serialize().map_err(|e| e.to_string())
+    sender_key.serialize().map_err(LibSignalException::from)
 }
 
 // ============================================================================
@@ -278,7 +278,7 @@ pub async fn group_encrypt_with_callbacks(
     load_sender_key: impl Fn(String, u32, String) -> DartFnFuture<Option<Vec<u8>>> + Send + Sync + 'static,
     store_sender_key: impl Fn(String, u32, String, Vec<u8>) -> DartFnFuture<()> + Send + Sync + 'static,
     get_identity_key_pair: impl Fn() -> DartFnFuture<Vec<u8>> + Send + Sync + 'static,
-) -> Result<GroupEncryptResult, String> {
+) -> Result<GroupEncryptResult, LibSignalException> {
     // Step 1: Load data
     let mut sender_key_bytes = load_sender_key(sender_name.clone(), sender_device_id, distribution_id.clone()).await;
     let mut identity_key_pair_bytes = get_identity_key_pair().await;
@@ -317,14 +317,14 @@ fn group_encrypt_inner(
     plaintext: &[u8],
     sender_key_bytes: &Option<Vec<u8>>,
     identity_key_pair_bytes: &[u8],
-) -> Result<(Vec<u8>, Vec<u8>), String> {
+) -> Result<(Vec<u8>, Vec<u8>), LibSignalException> {
     // Parse identity (unused but validates the data)
     let _our_identity = IdentityKeyPair::try_from(identity_key_pair_bytes)
-        .map_err(|e| e.to_string())?;
+        .map_err(LibSignalException::from)?;
 
     // Parse distribution ID as UUID
     let dist_uuid = Uuid::parse_str(distribution_id)
-        .map_err(|e| format!("Invalid distribution ID: {}", e))?;
+        .map_err(|e| LibSignalException::from(format!("Invalid distribution ID: {}", e)))?;
 
     // Create protocol address
     let sender_address = ProtocolAddress::new(
@@ -337,12 +337,17 @@ fn group_encrypt_inner(
 
     // Load sender key
     let sender_key_bytes = sender_key_bytes.as_ref()
-        .ok_or("No sender key found. Create a distribution message first.")?;
+        .ok_or_else(|| {
+            LibSignalException::new(
+                LibSignalErrorCode::NoSenderKeyState,
+                "No sender key found. Create a distribution message first.",
+            )
+        })?;
     let record = SenderKeyRecord::deserialize(sender_key_bytes)
-        .map_err(|e: SignalProtocolError| e.to_string())?;
+        .map_err(LibSignalException::from)?;
     block_on(async {
         sender_key_store.store_sender_key(&sender_address, dist_uuid, &record).await
-    }).map_err(|e| e.to_string())?;
+    }).map_err(LibSignalException::from)?;
 
     // Encrypt
     let ciphertext = block_on(async {
@@ -353,15 +358,15 @@ fn group_encrypt_inner(
             plaintext,
             &mut OsRng.unwrap_err(),
         ).await
-    }).map_err(|e| e.to_string())?;
+    }).map_err(LibSignalException::from)?;
 
     // Get updated sender key
     let updated_key = block_on(async {
         sender_key_store.load_sender_key(&sender_address, dist_uuid).await
-    }).map_err(|e: SignalProtocolError| e.to_string())?
+    }).map_err(LibSignalException::from)?
         .ok_or("Sender key not found after encryption")?;
 
-    let key_bytes = updated_key.serialize().map_err(|e| e.to_string())?;
+    let key_bytes = updated_key.serialize().map_err(LibSignalException::from)?;
 
     Ok((ciphertext.serialized().to_vec(), key_bytes))
 }
@@ -389,7 +394,7 @@ pub async fn group_decrypt_with_callbacks(
     ciphertext: Vec<u8>,
     load_sender_key: impl Fn(String, u32, String) -> DartFnFuture<Option<Vec<u8>>> + Send + Sync + 'static,
     store_sender_key: impl Fn(String, u32, String, Vec<u8>) -> DartFnFuture<()> + Send + Sync + 'static,
-) -> Result<GroupDecryptResult, String> {
+) -> Result<GroupDecryptResult, LibSignalException> {
     // Step 1: Load sender key
     let mut sender_key_bytes = load_sender_key(sender_name.clone(), sender_device_id, distribution_id.clone()).await;
 
@@ -424,10 +429,10 @@ fn group_decrypt_inner(
     distribution_id: &str,
     ciphertext: &[u8],
     sender_key_bytes: &Option<Vec<u8>>,
-) -> Result<(Vec<u8>, Vec<u8>), String> {
+) -> Result<(Vec<u8>, Vec<u8>), LibSignalException> {
     // Parse distribution ID as UUID
     let dist_uuid = Uuid::parse_str(distribution_id)
-        .map_err(|e| format!("Invalid distribution ID: {}", e))?;
+        .map_err(|e| LibSignalException::from(format!("Invalid distribution ID: {}", e)))?;
 
     // Create protocol address
     let sender_address = ProtocolAddress::new(
@@ -440,12 +445,17 @@ fn group_decrypt_inner(
 
     // Load sender key
     let sender_key_bytes = sender_key_bytes.as_ref()
-        .ok_or("No sender key found. Process a distribution message first.")?;
+        .ok_or_else(|| {
+            LibSignalException::new(
+                LibSignalErrorCode::NoSenderKeyState,
+                "No sender key found. Process a distribution message first.",
+            )
+        })?;
     let record = SenderKeyRecord::deserialize(sender_key_bytes)
-        .map_err(|e: SignalProtocolError| e.to_string())?;
+        .map_err(LibSignalException::from)?;
     block_on(async {
         sender_key_store.store_sender_key(&sender_address, dist_uuid, &record).await
-    }).map_err(|e| e.to_string())?;
+    }).map_err(LibSignalException::from)?;
 
     // Decrypt
     let plaintext = block_on(async {
@@ -454,15 +464,15 @@ fn group_decrypt_inner(
             &mut sender_key_store,
             &sender_address,
         ).await
-    }).map_err(|e| e.to_string())?;
+    }).map_err(LibSignalException::from)?;
 
     // Get updated sender key
     let updated_key = block_on(async {
         sender_key_store.load_sender_key(&sender_address, dist_uuid).await
-    }).map_err(|e: SignalProtocolError| e.to_string())?
+    }).map_err(LibSignalException::from)?
         .ok_or("Sender key not found after decryption")?;
 
-    let key_bytes = updated_key.serialize().map_err(|e| e.to_string())?;
+    let key_bytes = updated_key.serialize().map_err(LibSignalException::from)?;
 
     Ok((plaintext, key_bytes))
 }

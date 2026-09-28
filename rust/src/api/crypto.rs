@@ -1,5 +1,6 @@
 //! Cryptographic primitives API using libsignal-protocol and standard crypto crates.
 
+use crate::api::error::LibSignalException;
 use aes_gcm_siv::aead::{Aead, KeyInit, Nonce};
 use aes_gcm_siv::Aes256GcmSiv as CipherAes256GcmSiv;
 use hkdf::Hkdf;
@@ -44,7 +45,7 @@ pub fn hkdf_derive(
     mut input_key_material: Vec<u8>,
     mut salt: Vec<u8>,
     info: Vec<u8>,
-) -> Result<Vec<u8>, String> {
+) -> Result<Vec<u8>, LibSignalException> {
     // RFC 5869: HKDF-SHA256 output is limited to 255 * HashLen (8160 bytes).
     // Validate before allocating so an invalid length cannot trigger a huge allocation.
     const MAX_OUTPUT_LENGTH: u32 = 255 * 32;
@@ -54,7 +55,7 @@ pub fn hkdf_derive(
         return Err(format!(
             "HKDF output length {} exceeds maximum {}",
             output_length, MAX_OUTPUT_LENGTH
-        ));
+        ).into());
     }
 
     let salt_ref = if salt.is_empty() { None } else { Some(&salt[..]) };
@@ -62,7 +63,7 @@ pub fn hkdf_derive(
     let mut output = vec![0u8; output_length as usize];
 
     let result = hk.expand(&info, &mut output)
-        .map_err(|e| format!("HKDF expansion failed: {}", e));
+        .map_err(|e| LibSignalException::from(format!("HKDF expansion failed: {}", e)));
 
     // SECURITY: Always zeroize regardless of success/failure
     input_key_material.zeroize();
@@ -86,17 +87,17 @@ impl Aes256GcmSiv {
     /// # Security
     /// The key is securely zeroized after cipher creation, even on error.
     #[flutter_rust_bridge::frb(sync)]
-    pub fn new(mut key: Vec<u8>) -> Result<Aes256GcmSiv, String> {
+    pub fn new(mut key: Vec<u8>) -> Result<Aes256GcmSiv, LibSignalException> {
         if key.len() != 32 {
             key.zeroize(); // SECURITY: Zeroize even on error
-            return Err(format!("Key must be 32 bytes, got {} bytes", key.len()));
+            return Err(format!("Key must be 32 bytes, got {} bytes", key.len()).into());
         }
 
         let key_arr: &[u8; 32] = match key.as_slice().try_into() {
             Ok(arr) => arr,
             Err(_) => {
                 key.zeroize(); // SECURITY: Zeroize on conversion error
-                return Err("Failed to convert key".to_string());
+                return Err("Failed to convert key".into());
             }
         };
         let cipher = CipherAes256GcmSiv::new(key_arr.into());
@@ -119,9 +120,9 @@ impl Aes256GcmSiv {
         plaintext: Vec<u8>,
         nonce: Vec<u8>,
         associated_data: Vec<u8>,
-    ) -> Result<Vec<u8>, String> {
+    ) -> Result<Vec<u8>, LibSignalException> {
         if nonce.len() != 12 {
-            return Err(format!("Nonce must be 12 bytes, got {} bytes", nonce.len()));
+            return Err(format!("Nonce must be 12 bytes, got {} bytes", nonce.len()).into());
         }
 
         // `Array::from_slice` is deprecated in aead 0.6 in favour of `TryFrom`.
@@ -129,7 +130,7 @@ impl Aes256GcmSiv {
         // it is still handled rather than unwrapped so a future change to that
         // check cannot turn into a panic across the FFI boundary.
         let nonce_arr = Nonce::<CipherAes256GcmSiv>::try_from(&nonce[..])
-            .map_err(|_| format!("Nonce must be 12 bytes, got {} bytes", nonce.len()))?;
+            .map_err(|_| LibSignalException::from(format!("Nonce must be 12 bytes, got {} bytes", nonce.len())))?;
 
         self.cipher
             .encrypt(
@@ -139,7 +140,7 @@ impl Aes256GcmSiv {
                     aad: &associated_data,
                 },
             )
-            .map_err(|e| format!("Encryption failed: {}", e))
+            .map_err(|e| LibSignalException::from(format!("Encryption failed: {}", e)))
     }
 
     /// Decrypt ciphertext with the given nonce and associated data.
@@ -160,14 +161,14 @@ impl Aes256GcmSiv {
         ciphertext: Vec<u8>,
         nonce: Vec<u8>,
         associated_data: Vec<u8>,
-    ) -> Result<Vec<u8>, String> {
+    ) -> Result<Vec<u8>, LibSignalException> {
         if nonce.len() != 12 {
-            return Err(format!("Nonce must be 12 bytes, got {} bytes", nonce.len()));
+            return Err(format!("Nonce must be 12 bytes, got {} bytes", nonce.len()).into());
         }
 
         // See `encrypt` above for why this is a checked conversion.
         let nonce_arr = Nonce::<CipherAes256GcmSiv>::try_from(&nonce[..])
-            .map_err(|_| format!("Nonce must be 12 bytes, got {} bytes", nonce.len()))?;
+            .map_err(|_| LibSignalException::from(format!("Nonce must be 12 bytes, got {} bytes", nonce.len())))?;
 
         self.cipher
             .decrypt(
@@ -177,7 +178,7 @@ impl Aes256GcmSiv {
                     aad: &associated_data,
                 },
             )
-            .map_err(|e| format!("Decryption failed: {}", e))
+            .map_err(|e| LibSignalException::from(format!("Decryption failed: {}", e)))
     }
 }
 
@@ -204,14 +205,14 @@ impl Fingerprint {
         local_public_key: Vec<u8>,
         remote_identifier: Vec<u8>,
         remote_public_key: Vec<u8>,
-    ) -> Result<Fingerprint, String> {
-        let local_pub = NativePublicKey::deserialize(&local_public_key).map_err(|e| e.to_string())?;
+    ) -> Result<Fingerprint, LibSignalException> {
+        let local_pub = NativePublicKey::deserialize(&local_public_key).map_err(LibSignalException::from)?;
         if !local_pub.is_canonical() {
-            return Err("Local public key is a low-order point".to_string());
+            return Err("Local public key is a low-order point".into());
         }
-        let remote_pub = NativePublicKey::deserialize(&remote_public_key).map_err(|e| e.to_string())?;
+        let remote_pub = NativePublicKey::deserialize(&remote_public_key).map_err(LibSignalException::from)?;
         if !remote_pub.is_canonical() {
-            return Err("Remote public key is a low-order point".to_string());
+            return Err("Remote public key is a low-order point".into());
         }
         let local_identity = IdentityKey::new(local_pub);
         let remote_identity = IdentityKey::new(remote_pub);
@@ -224,7 +225,7 @@ impl Fingerprint {
             &remote_identifier,
             &remote_identity,
         )
-        .map_err(|e| format!("Fingerprint creation failed: {}", e))?;
+        .map_err(|e| LibSignalException::from(format!("Fingerprint creation failed: {}", e)))?;
 
         Ok(Fingerprint { inner: native })
     }
@@ -233,26 +234,26 @@ impl Fingerprint {
     ///
     /// Returns a 60-digit numeric string formatted as 12 groups of 5 digits.
     #[flutter_rust_bridge::frb(sync)]
-    pub fn display_string(&self) -> Result<String, String> {
+    pub fn display_string(&self) -> Result<String, LibSignalException> {
         self.inner
             .display_string()
-            .map_err(|e| format!("Failed to get display string: {}", e))
+            .map_err(|e| LibSignalException::from(format!("Failed to get display string: {}", e)))
     }
 
     /// Get the scannable encoding of this fingerprint.
     ///
     /// Returns bytes suitable for encoding in a QR code.
     #[flutter_rust_bridge::frb(sync)]
-    pub fn scannable_encoding(&self) -> Result<Vec<u8>, String> {
+    pub fn scannable_encoding(&self) -> Result<Vec<u8>, LibSignalException> {
         self.inner
             .scannable
             .serialize()
-            .map_err(|e| format!("Failed to serialize scannable fingerprint: {}", e))
+            .map_err(|e| LibSignalException::from(format!("Failed to serialize scannable fingerprint: {}", e)))
     }
 
     /// Create a copy of this fingerprint.
     #[flutter_rust_bridge::frb(sync)]
-    pub fn clone_fingerprint(&self) -> Result<Fingerprint, String> {
+    pub fn clone_fingerprint(&self) -> Result<Fingerprint, LibSignalException> {
         Ok(Fingerprint {
             inner: self.inner.clone(),
         })
@@ -268,10 +269,10 @@ impl Fingerprint {
 /// # Returns
 /// True if the fingerprints match, false otherwise.
 #[flutter_rust_bridge::frb(sync)]
-pub fn fingerprint_compare(fingerprint1: Vec<u8>, fingerprint2: Vec<u8>) -> Result<bool, String> {
+pub fn fingerprint_compare(fingerprint1: Vec<u8>, fingerprint2: Vec<u8>) -> Result<bool, LibSignalException> {
     let scannable1 = libsignal_protocol::ScannableFingerprint::deserialize(&fingerprint1)
-        .map_err(|e| format!("Failed to deserialize fingerprint1: {}", e))?;
+        .map_err(|e| LibSignalException::from(format!("Failed to deserialize fingerprint1: {}", e)))?;
     scannable1
         .compare(&fingerprint2)
-        .map_err(|e| format!("Failed to compare fingerprints: {}", e))
+        .map_err(|e| LibSignalException::from(format!("Failed to compare fingerprints: {}", e)))
 }

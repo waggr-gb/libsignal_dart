@@ -6,11 +6,12 @@
 //! 2. Uses in-memory stores temporarily during operations
 //! 3. Returns results for Dart to persist via callbacks
 
+use crate::api::error::LibSignalException;
 use flutter_rust_bridge::DartFnFuture;
 use futures::executor::block_on;
 use libsignal_protocol::{
     IdentityKeyPair, InMemIdentityKeyStore, InMemSessionStore, ProtocolAddress,
-    SessionRecord as NativeSessionRecord, SessionStore, SignalProtocolError,
+    SessionRecord as NativeSessionRecord, SessionStore,
 };
 use rand::{rngs::OsRng, TryRngCore as _};
 use zeroize::Zeroize;
@@ -59,7 +60,7 @@ pub async fn process_prekey_bundle_with_callbacks(
     get_local_registration_id: impl Fn() -> DartFnFuture<u32> + Send + Sync + 'static,
     save_identity: impl Fn(String, u32, Vec<u8>) -> DartFnFuture<()> + Send + Sync + 'static,
     get_identity: impl Fn(String, u32) -> DartFnFuture<Option<Vec<u8>>> + Send + Sync + 'static,
-) -> Result<(), String> {
+) -> Result<(), LibSignalException> {
     // Step 1: Load data via callbacks
     let mut existing_session_bytes =
         load_session(remote_name.clone(), remote_device_id).await;
@@ -118,10 +119,10 @@ fn process_prekey_bundle_inner(
     identity_key_pair_bytes: &[u8],
     local_registration_id: u32,
     known_remote_identity: &Option<Vec<u8>>,
-) -> Result<ProcessPreKeyBundleResult, String> {
+) -> Result<ProcessPreKeyBundleResult, LibSignalException> {
     // Parse the identity key pair
     let our_identity =
-        IdentityKeyPair::try_from(identity_key_pair_bytes).map_err(|e| e.to_string())?;
+        IdentityKeyPair::try_from(identity_key_pair_bytes).map_err(LibSignalException::from)?;
 
     // Create the protocol addresses
     let remote_address = ProtocolAddress::new(
@@ -149,13 +150,13 @@ fn process_prekey_bundle_inner(
 
     // Populate session store with existing session if provided
     if let Some(bytes) = existing_session_bytes {
-        let existing = NativeSessionRecord::deserialize(bytes).map_err(|e| e.to_string())?;
+        let existing = NativeSessionRecord::deserialize(bytes).map_err(LibSignalException::from)?;
         block_on(async { session_store.store_session(&remote_address, &existing).await })
-            .map_err(|e: SignalProtocolError| e.to_string())?;
+            .map_err(LibSignalException::from)?;
     }
 
     // Get their identity key before processing
-    let their_identity_key = bundle.native().identity_key().map_err(|e| e.to_string())?;
+    let their_identity_key = bundle.native().identity_key().map_err(LibSignalException::from)?;
 
     // Call the libsignal process_prekey_bundle
     block_on(async {
@@ -170,17 +171,17 @@ fn process_prekey_bundle_inner(
         )
         .await
     })
-    .map_err(|e| e.to_string())?;
+    .map_err(LibSignalException::from)?;
 
     // Get the session record from the store
     let session_record = block_on(async {
         SessionStore::load_session(&session_store, &remote_address).await
     })
-    .map_err(|e: SignalProtocolError| e.to_string())?
+    .map_err(LibSignalException::from)?
     .ok_or("Session not created")?;
 
     // Serialize the results
-    let session_bytes = session_record.serialize().map_err(|e| e.to_string())?;
+    let session_bytes = session_record.serialize().map_err(LibSignalException::from)?;
     let identity_bytes = their_identity_key.serialize().to_vec();
 
     Ok(ProcessPreKeyBundleResult {
